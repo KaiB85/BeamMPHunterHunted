@@ -1,7 +1,7 @@
 local M = {}
 
-local imgui = ui_imgui
-local hunterHunted = extensions.hunterHunted
+-- Simplified UI for BeamNG
+local hunterHunted = nil
 
 -- UI State
 local uiState = {

@@ -23,13 +23,16 @@ local ROLES = {
 local function onExtensionLoaded()
     log('I', 'hunterHunted', 'Hunter Hunted mod loaded')
     
-    -- Register network events
-    extensions.hook("onPlayerJoin", M.onPlayerJoin)
-    extensions.hook("onPlayerLeave", M.onPlayerLeave)
-    extensions.hook("onUpdate", M.onUpdate)
+    -- Initialize local player
+    local playerId = be:getPlayerName() or "Player1"
+    gameState.players[playerId] = {
+        role = ROLES.NEUTRAL,
+        position = {x = 0, y = 0, z = 0},
+        velocity = 0,
+        lastUpdate = 0
+    }
     
-    -- Initialize UI
-    M.initUI()
+    log('I', 'hunterHunted', 'Local player initialized as: ' .. playerId)
 end
 
 -- Player Management
@@ -249,7 +252,17 @@ end
 
 -- UI Functions
 function M.initUI()
-    -- Initialize UI elements for role selection and game info
+    -- Simple console-based UI
+    log('I', 'hunterHunted', 'UI initialized - Use console commands:')
+    log('I', 'hunterHunted', 'extensions.hunterHunted.setPlayerRole("ROLE") - NEUTRAL/HUNTER/HUNTED')
+    log('I', 'hunterHunted', 'extensions.hunterHunted.startGame() - Start game')
+    log('I', 'hunterHunted', 'extensions.hunterHunted.stopGame() - Stop game')
+end
+
+-- Console Commands for testing
+function M.setRole(role)
+    local playerId = be:getPlayerName() or "Player1"
+    M.setPlayerRole(playerId, string.lower(role))
 end
 
 -- Public API
@@ -260,5 +273,14 @@ M.getGameState = function() return gameState end
 
 -- Extension lifecycle
 M.onExtensionLoaded = onExtensionLoaded
+M.onExtensionUnloaded = function()
+    log('I', 'hunterHunted', 'Hunter Hunted mod unloaded')
+end
+
+-- Add console commands
+M.setRole = M.setRole
+
+-- Auto-initialize
+onExtensionLoaded()
 
 return M
