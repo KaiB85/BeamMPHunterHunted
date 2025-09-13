@@ -1,0 +1,13 @@
+# Ignore reference files
+ReferenceFile*
+
+# Ignore temporary files
+temp_mod/
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore backup files
+*.bak
+*.tmp
