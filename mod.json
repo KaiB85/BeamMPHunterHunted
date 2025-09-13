@@ -1,0 +1,9 @@
+{
+  "name": "Hunter Hunted",
+  "version": "1.0.0",
+  "description": "Hunter vs Hunted multiplayer gamemode for BeamNG.drive",
+  "author": "KaiB85",
+  "gameVersion": "0.30.5.0",
+  "modType": "Script",
+  "entryPoint": "lua/ge/extensions/hunterHunted.lua"
+}
