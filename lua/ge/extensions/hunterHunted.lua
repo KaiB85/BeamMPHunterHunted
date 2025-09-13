@@ -280,7 +280,13 @@ end
 -- Add console commands
 M.setRole = M.setRole
 
--- Auto-initialize
-onExtensionLoaded()
+-- Initialize immediately when loaded
+if not _G.hunterHuntedLoaded then
+    _G.hunterHuntedLoaded = true
+    onExtensionLoaded()
+end
+
+-- Register extension globally
+_G.hunterHuntedExtension = M
 
 return M
