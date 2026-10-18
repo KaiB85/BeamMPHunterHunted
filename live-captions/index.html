@@ -59,6 +59,9 @@
   }
   #text .old { color: var(--dim); }
   #text .interim { color: var(--accent); }
+  #source { font-size: 20px; line-height: 1.3; color: var(--dim); margin-top: 10px; overflow-wrap: anywhere; }
+  body.zh #text { font-family: "PingFang SC", "Hiragino Sans GB", "Heiti SC", "Microsoft YaHei", sans-serif; letter-spacing: 0; }
+  #zh.on { background: var(--accent); color: var(--bg); }
   #hint { font-size: 28px; font-weight: 600; color: var(--dim); line-height: 1.3; }
   #hint small { display: block; font-size: 17px; font-weight: 400; margin-top: 12px; }
   #bar {
@@ -83,7 +86,9 @@
   }
   button:active { opacity: .7; }
   button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-  #toggle { flex: 1; font-size: 20px; background: #1f9d55; color: #fff; }
+  #bar { flex-wrap: wrap; }
+  #bar button:not(#toggle) { flex: 1 1 0; min-width: 0; padding: 0 4px; }
+  #toggle { flex: 1 0 100%; order: -1; font-size: 20px; background: #1f9d55; color: #fff; }
   #toggle.on { background: #d62f2f; }
   #status { font-size: 13px; color: var(--dim); text-align: center; padding: 4px 0 0; background: var(--bar); }
   @media (prefers-reduced-motion: reduce) { #stage { transition: none; } }
@@ -92,15 +97,17 @@
 <body>
   <div id="stage">
     <div id="hint">Tap <b>Start</b> and speak.<br>Your words appear here in large letters.
-      <small>Use A− / A+ to change text size. ⇅ flips the text upside-down for someone sitting across from you.</small>
+      <small>Use A− / A+ to change text size. 中文 shows the words translated into Simplified Chinese. ⇅ flips the text upside-down for someone sitting across from you.</small>
     </div>
     <div id="text" aria-live="polite"></div>
+    <div id="source" hidden></div>
   </div>
   <div id="status">Ready</div>
   <div id="bar">
     <button id="smaller" aria-label="Smaller text">A−</button>
     <button id="bigger" aria-label="Bigger text">A+</button>
     <button id="toggle">Start</button>
+    <button id="zh" aria-label="Translate to Simplified Chinese">中文</button>
     <button id="flip" aria-label="Flip text">⇅</button>
     <button id="theme" aria-label="Light or dark">◐</button>
     <button id="clear" aria-label="Clear text">✕</button>
@@ -119,7 +126,10 @@
 
   let size = store.get("lc.size", 56);
   let light = store.get("lc.light", false);
-  let finals = [];          // finished sentences
+  let finals = [];          // finished sentences: {en, zh}
+  let zhMode = store.get("lc.zh", false);
+  let interimZh = "";
+  let interimTimer = null;
   let interim = "";
   let wanted = false;       // user wants it running
   let rec = null;
@@ -133,23 +143,69 @@
   }
   applySize(); applyTheme();
 
+  // Translation: Google's free endpoint first, MyMemory as fallback
+  const cache = new Map();
+  async function translate(text) {
+    if (cache.has(text)) return cache.get(text);
+    const q = encodeURIComponent(text);
+    let out = null;
+    try {
+      const r = await fetch("https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=" + q);
+      if (r.ok) { const j = await r.json(); out = j[0].map((x) => x[0]).join(""); }
+    } catch (e) {}
+    if (!out) {
+      try {
+        const r = await fetch("https://api.mymemory.translated.net/get?langpair=en|zh-CN&q=" + q);
+        if (r.ok) { const j = await r.json(); if (j.responseStatus === 200) out = j.responseData.translatedText; }
+      } catch (e) {}
+    }
+    if (out) cache.set(text, out);
+    else setStatus("Translation failed — check your internet connection");
+    return out;
+  }
+  function translateFinal(item) {
+    if (!zhMode || item.zh || item.pending) return;
+    item.pending = true;
+    translate(item.en).then((zh) => { item.pending = false; if (zh) { item.zh = zh; render(); } });
+  }
+  function scheduleInterim() {
+    clearTimeout(interimTimer);
+    if (!zhMode || !interim) { interimZh = ""; return; }
+    const snap = interim;
+    interimTimer = setTimeout(() => {
+      translate(snap).then((zh) => { if (zh && interim === snap) { interimZh = zh; render(); } });
+    }, 900);
+  }
+  function addFinal(t) {
+    const item = { en: t.charAt(0).toUpperCase() + t.slice(1), zh: "" };
+    finals.push(item);
+    if (finals.length > 50) finals = finals.slice(-50);
+    translateFinal(item);
+  }
+
   function render() {
     hintEl.hidden = finals.length > 0 || interim.length > 0;
     textEl.textContent = "";
     // keep the last few sentences; older ones are dimmed
     const keep = finals.slice(-6);
-    keep.forEach((s, i) => {
+    const shown = (f) => zhMode ? (f.zh || "…") : f.en;
+    keep.forEach((f, i) => {
       const span = document.createElement("span");
       if (i < keep.length - 1 || interim) span.className = "old";
-      span.textContent = s + " ";
+      span.textContent = shown(f) + (zhMode ? "" : " ");
       textEl.appendChild(span);
     });
     if (interim) {
       const span = document.createElement("span");
       span.className = "interim";
-      span.textContent = interim;
+      span.textContent = zhMode ? (interimZh || "…") : interim;
       textEl.appendChild(span);
     }
+    // In Chinese mode, show the recognised English small underneath so the speaker can check it
+    const src = $("source");
+    const last = interim || (finals.length ? finals[finals.length - 1].en : "");
+    src.hidden = !zhMode || !last;
+    src.textContent = last;
     const stage = $("stage");
     stage.scrollTop = stage.scrollHeight;
   }
@@ -176,13 +232,12 @@
         const t = r[0].transcript.trim();
         if (!t) continue;
         if (r.isFinal) {
-          finals.push(t.charAt(0).toUpperCase() + t.slice(1));
-          if (finals.length > 50) finals = finals.slice(-50);
+          addFinal(t);
         } else {
           live += (live ? " " : "") + t;
         }
       }
-      interim = live;
+      if (live !== interim) { interim = live; interimZh = ""; scheduleInterim(); }
       render();
     };
     rec.onerror = (e) => {
@@ -196,7 +251,7 @@
     };
     rec.onend = () => {
       // Safari stops after pauses; restart automatically while the user wants it on
-      if (interim) { finals.push(interim); interim = ""; render(); }
+      if (interim) { addFinal(interim); interim = ""; interimZh = ""; render(); }
       if (wanted) setTimeout(() => { if (wanted) { try { startRec(); } catch (e) {} } }, 250);
       else setStatus("Stopped");
     };
@@ -223,7 +278,16 @@
   $("smaller").addEventListener("click", () => { size = Math.max(24, size - 8); applySize(); render(); });
   $("flip").addEventListener("click", () => document.body.classList.toggle("flipped"));
   $("theme").addEventListener("click", () => { light = !light; applyTheme(); });
-  $("clear").addEventListener("click", () => { finals = []; interim = ""; render(); });
+  $("clear").addEventListener("click", () => { finals = []; interim = ""; interimZh = ""; render(); });
+  function applyZh() {
+    document.body.classList.toggle("zh", zhMode);
+    $("zh").classList.toggle("on", zhMode);
+    store.set("lc.zh", zhMode);
+    if (zhMode) { finals.slice(-6).forEach(translateFinal); scheduleInterim(); }
+    render();
+  }
+  $("zh").addEventListener("click", () => { zhMode = !zhMode; applyZh(); });
+  applyZh();
 
   if (!SR) setStatus("Speech recognition not supported here. Open in Safari (iPhone) or Chrome.");
 })();
